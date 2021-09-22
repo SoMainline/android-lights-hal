@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/",
+                "${workspaceFolder}/../../../../external/libcxx/include",
+                "${workspaceFolder}/../../../../system/core/base/include",
+                "${workspaceFolder}/../../../../frameworks/native/libs/binder/ndk/include_platform/",
+                "${workspaceFolder}/../../../../out/soong/.intermediates/hardware/interfaces/light/aidl/android.hardware.light-ndk_platform-source/gen/include",
+                "${workspaceFolder}/../../../../out/soong/ndk/sysroot/usr/include"
+            ],
+            "defines": [],
+            "cStandard": "c11",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "linux-gcc-arm64",
+            "compilerPath": "/usr/bin/aarch64-linux-gnu-g++"
+        }
+    ],
+    "version": 4
+}
