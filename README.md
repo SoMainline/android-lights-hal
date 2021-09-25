@@ -20,5 +20,4 @@ And set the appropriate user/group in your `ueventd.rc` file for all relevant li
 
 ## Planned improvements
 
-- Detect and register backlight(s) from `/sys/class/backlight/*`
 - Detect and register LED(s) from `/sys/class/leds/*`

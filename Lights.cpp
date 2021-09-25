@@ -17,12 +17,38 @@
 #include "Lights.h"
 
 #include <android-base/logging.h>
+#include <dirent.h>
 #include <fstream>
 
-// TODO: Recurse all backlight files!
-static const std::string BACKLIGHT_DIR = "/sys/class/backlight/backlight/";
-static const std::string BACKLIGHT_MAX_BRIGHTNESS = BACKLIGHT_DIR + "max_brightness";
-static const std::string BACKLIGHT_BRIGHTNESS = BACKLIGHT_DIR + "brightness";
+static const std::string BACKLIGHT_DIR = "/sys/class/backlight";
+
+Light::Light(HwLight hwLight, std::string path)
+    : hwLight(hwLight)
+    , path(path)
+{
+}
+
+Backlight::Backlight(HwLight hwLight, std::string path, uint32_t maxBrightness)
+    : Light(hwLight, path)
+    , maxBrightness(maxBrightness)
+{
+}
+
+Backlight *Backlight::createBacklight(HwLight hwLight, std::string path)
+{
+    uint32_t maxBrightness;
+    std::ifstream stream(path + "/max_brightness");
+    if (auto stream = std::ifstream(path + "/max_brightness")) {
+        stream >> maxBrightness;
+    } else {
+        LOG(ERROR) << "Failed to read `max_brightness` for " << path;
+        return nullptr;
+    }
+
+    LOG(INFO) << "Creating backlight " << path << " with max brightness " << maxBrightness;
+
+    return new Backlight(hwLight, path, maxBrightness);
+}
 
 static int32_t rgbToBrightness(int32_t color)
 {
@@ -32,40 +58,65 @@ static int32_t rgbToBrightness(int32_t color)
     return (77 * r + 150 * g + 29 * b) >> 8;
 }
 
-ndk::ScopedAStatus Lights::setLightState(int id, const HwLightState &state)
+ndk::ScopedAStatus Backlight::setLightState(const HwLightState &state) const
 {
-    LOG(INFO) << "Lights setting state for id=" << id << " to color " << std::hex << state.color;
-    switch (id) {
-    case 0: {
-        auto brightness = rgbToBrightness(state.color);
-        // Adding half of the max (255/2=127) provides proper rounding while staying in integer mode:
-        brightness = (brightness * backlightMaxBrightness + 127) / 255;
-        LOG(INFO) << "Changing backlight to level " << brightness << "/" << backlightMaxBrightness;
-        std::ofstream stream(BACKLIGHT_BRIGHTNESS);
-        if (!stream) {
-            LOG(ERROR) << "Failed to open backlight file for writing";
-            return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
-        }
+    auto brightness = rgbToBrightness(state.color);
+    // Adding half of the max (255/2=127) provides proper rounding while staying in integer mode:
+    brightness = (brightness * maxBrightness + 127) / 255;
+    if (state.brightnessMode == BrightnessMode::LOW_PERSISTENCE)
+        LOG(ERROR) << "TODO: Implement Low Persistence brightness mode";
+    LOG(DEBUG) << "Changing backlight to level " << brightness << "/" << maxBrightness;
+    if (auto stream = std::ofstream(path + "/brightness")) {
         stream << brightness;
-        return ndk::ScopedAStatus::fromExceptionCode(EX_NONE);
-    }
-    default:
+        return ndk::ScopedAStatus::ok();
+    } else {
+        LOG(ERROR) << "Failed to write `brightness` to " << path;
         return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
     }
 }
 
-ndk::ScopedAStatus Lights::getLights(std::vector<HwLight> *lights)
+ndk::ScopedAStatus Lights::setLightState(int id, const HwLightState &state)
 {
-    LOG(INFO) << "Lights reporting supported lights";
-    lights->emplace_back(HwLight {
-        .id = 0,
-        .ordinal = 0,
-        .type = LightType::BACKLIGHT });
+    LOG(DEBUG) << "Lights setting state for id=" << id << " to color " << std::hex << state.color;
+
+    if (id >= lights.size())
+        return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+
+    const auto &light = lights[id];
+    return light->setLightState(state);
+}
+
+ndk::ScopedAStatus Lights::getLights(std::vector<HwLight> *hwLights)
+{
+    for (const auto &light : lights)
+        hwLights->emplace_back(light->hwLight);
     return ndk::ScopedAStatus::ok();
 }
 
 Lights::Lights()
 {
-    std::ifstream stream(BACKLIGHT_MAX_BRIGHTNESS);
-    stream >> backlightMaxBrightness;
+    int id = 0;
+    int ordinal = 0;
+    // Cannot use std::filesystem from libc++fs which is not available for vendor modules.
+    // Maybe with Android S?
+    // for (const auto &backlight : std::filesystem::directory_iterator("/sys/class/backlight"))
+    //     if (backlight.is_directory() || backlight.is_symlink())
+    //         lights.emplace_back(..);
+
+    if (auto backlights = opendir(BACKLIGHT_DIR.c_str())) {
+        while (dirent *ent = readdir(backlights)) {
+            if ((ent->d_type == DT_DIR && ent->d_name[0] != '.') || ent->d_type == DT_LNK) {
+                std::string backlightPath = BACKLIGHT_DIR + "/" + ent->d_name;
+                if (auto backlight = Backlight::createBacklight(
+                        HwLight { .id = id++, .ordinal = ordinal++, .type = LightType::BACKLIGHT },
+                        backlightPath))
+                    lights.emplace_back(backlight);
+            }
+        }
+        closedir(backlights);
+    } else {
+        LOG(ERROR) << "Failed to open " << BACKLIGHT_DIR;
+    }
+
+    LOG(INFO) << "Found " << ordinal << " backlights";
 }
