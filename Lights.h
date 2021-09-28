@@ -40,6 +40,16 @@ struct Backlight : public Light {
     ndk::ScopedAStatus setLightState(const HwLightState &state) const override;
 };
 
+struct Led : public Light {
+    const uint32_t maxBrightness;
+
+    Led(HwLight hwLight, std::string path, uint32_t maxBrightness);
+    static Led *createLed(HwLight hwLight, std::string path);
+    inline virtual ~Led() {};
+
+    ndk::ScopedAStatus setLightState(const HwLightState &state) const override;
+};
+
 class Lights : public BnLights {
     ndk::ScopedAStatus setLightState(int id, const HwLightState &state) override;
     ndk::ScopedAStatus getLights(std::vector<HwLight> *types) override;

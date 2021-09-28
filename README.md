@@ -20,4 +20,4 @@ And set the appropriate user/group in your `ueventd.rc` file for all relevant li
 
 ## Planned improvements
 
-- Detect and register LED(s) from `/sys/class/leds/*`
+- Extended led `trigger`s
