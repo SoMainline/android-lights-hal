@@ -19,6 +19,7 @@
 #include <android-base/logging.h>
 #include <dirent.h>
 #include <fstream>
+#include <math.h>
 
 static const std::string BACKLIGHT_DIR = "/sys/class/backlight";
 static const std::string LEDS_DIR = "/sys/class/leds";
@@ -59,11 +60,26 @@ static int32_t rgbToBrightness(int32_t color)
     return (77 * r + 150 * g + 29 * b) >> 8;
 }
 
+static float convertLinearToGammaFloat(float val)
+{
+    const float r = 0.5;
+    const float a = 0.17883277;
+    const float b = 0.28466892;
+    const float c = 0.55991073;
+    // HLG normalizes to the range [0, 12] rather than [0, 1]
+    float normalizedVal = val * 12;
+
+    if (normalizedVal <= 1.0)
+        return sqrt(normalizedVal) * r;
+    else
+        return a * log(normalizedVal - b) + c;
+}
+
 ndk::ScopedAStatus Backlight::setLightState(const HwLightState &state) const
 {
     auto brightness = rgbToBrightness(state.color);
-    // Adding half of the max (255/2=127) provides proper rounding while staying in integer mode:
-    brightness = (brightness * maxBrightness + 127) / 255;
+    brightness = convertLinearToGammaFloat((float)brightness / 255) * maxBrightness;
+
     if (state.brightnessMode == BrightnessMode::LOW_PERSISTENCE)
         LOG(ERROR) << "TODO: Implement Low Persistence brightness mode";
     LOG(DEBUG) << "Changing backlight to level " << brightness << "/" << maxBrightness;
